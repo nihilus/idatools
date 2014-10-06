@@ -1,6 +1,7 @@
-# callgraph_tree.py
+# xref_trees.py
 #
-# This generates a call graph in a tree format.  It will ignore allocs and any
+# This generates callgraph trees to and from the current function.  
+# It will ignore allocs and any
 # functions that start with zzz_ .  You can add other functions you want to 
 # ignore in BLACKLIST
 #
