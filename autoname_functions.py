@@ -18,7 +18,10 @@ def xrefToString(xref):
 
 
 def sanitizeString(s):
-    ret =  re.sub( r'[^a-zA-Z0-9_]+', '_', s )
+    ret = s
+    ret =  re.sub( r'%[\+ -#0]*[\d\.]*[lhLzjt]{0,2}[diufFeEgGxXoscpaAn]', '_', ret  )
+    ret =  re.sub( r'[^a-zA-Z0-9_]+', '_', ret )
+    ret =  re.sub( r'_+', '_', ret )
     return ret.strip('_')
 
 def processStringXrefs(item, functionsHash):
@@ -57,6 +60,7 @@ def main():
     allStrings.setup( strtypes = Strings.STR_C )
     # key : function EA
     # value : ( Xref, string )
+
 
     functionsHash = {}
 
