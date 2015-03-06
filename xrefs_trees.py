@@ -125,13 +125,14 @@ def dumpXrefsTo( pc, callStack, functionCallCounts ):
 					dumpXrefsTo( xref.frm, list(callStack), functionCallCounts )
 					xrefs.append(xrefName)
 
+functionEA = ChooseFunction("Select function to generate graph")
 
 Message( "=" * 80 + "\n" )
 Message("Cross References From\n")
 Message( "=" * 80 + "\n" )
-dumpXrefsFrom(here(), [], {} )
+dumpXrefsFrom(functionEA, [], {} )
 
 Message( "=" * 80 + "\n" )
 Message("Cross References To\n")
 Message( "=" * 80 + "\n" )
-dumpXrefsTo(here(), [], {} )
+dumpXrefsTo(functionEA, [], {} )
