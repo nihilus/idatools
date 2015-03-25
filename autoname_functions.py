@@ -88,11 +88,13 @@ class Thing:
 
 
     def __hash__(self):
-        return self.name.__hash__()
+        return self.addr
 
     def __eq__(self, other):
-        return self.name.__eq__(other)
+        return self.addr == other.addr
 
+    def __cmp__(self, other):
+        return  self.addr - other.addr
 
 
 
@@ -218,8 +220,14 @@ def fixupIdaStringNames():
             safeName( s.ea, newName );
 
 
-
-
+def tester():
+    addr = 0x808EFA38
+    thing = Thing(addr)
+    froms = thing.xrefsFrom()
+    tos = thing.xrefsTo()
+    print("%d -> %d" % ( len(tos), len(froms) ) )
+    for f in froms:
+        print("%s - %x" % (f, f.addr) )
 def main():
 
     fixupIdaStringNames()
@@ -239,5 +247,5 @@ def main():
     print("Done!")
 
 if __name__ == '__main__':
-    #fixupIdaStringNames()
-    main()
+    tester()
+    #main()
