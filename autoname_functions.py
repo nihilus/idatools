@@ -13,6 +13,133 @@ from idautils import *
 import re
 
 
+BADPREFIXES_RE = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
+AUTONAMED_RE   = re.compile( r"^z.?_" )
+
+
+def safeName( addr, baseName ):
+
+    newName = baseName
+    
+    for suffix in [""] +  [ str(x) for x in range(1000)]:        
+        newName = baseName + str(suffix)
+        ret = MakeNameEx( addr, newName,  SN_NOCHECK | SN_AUTO | SN_NOWARN )
+        if ret != 0:
+            return
+    
+
+class Thing:
+    def __init__( self, addr ):
+        
+        funcAddr = get_func(addr)
+        if funcAddr:
+            self.addr = funcAddr.startEA
+            self.isFunction = True
+        else:
+            self.addr = addr
+            self.isFunction = False        
+
+        self.name = Name(self.addr)
+        testName = Demangle( self.name, INF_LONG_DN)
+        if testName:
+            self.name = testName
+
+        #self.name = get_name(self.addr)
+
+    def xrefsTo(self):
+        xrefs = set()
+        map( lambda x: xrefs.add(Thing(x.frm)), XrefsTo( self.addr, 0 ) )
+        # for xref in XrefsTo( self.addr, 0 ):
+        #     thingTest = Thing(xref.frm)
+        #     if( thingTest.isNamed() ):
+        #         xrefs.add(xref.frm)
+        return xrefs
+
+    def xrefsFrom(self):
+        xrefs = set()
+        
+        if self.isFunction:
+            fromAddrs = FuncItems( self.addr )
+        else:
+            fromAddrs = [self.addr]
+
+        for fromAddr in fromAddrs:
+            for xrefFrom in XrefsFrom( fromAddr, 0 ):
+                xrefThing = Thing(xrefFrom.to)
+                if xrefThing.addr != self.addr:
+                    xrefs.add(xrefThing)
+
+            #map( lambda x: xrefs.add(x.to),  XrefsFrom( fromAddr, 0 ) )        
+
+        return xrefs
+
+    def isNamed(self):
+        return self.name and not BADPREFIXES_RE.match(self.name)
+
+
+    def suffix(self):
+        if self.isFunction:
+            return "()"
+        else:
+            return "@"
+
+    def __repr__(self):
+        return "%s%s" % (self.name, self.suffix())
+
+
+    def __hash__(self):
+        return self.name.__hash__()
+
+    def __eq__(self, other):
+        return self.name.__eq__(other)
+
+
+
+
+def renameData():
+    print("Renaming Data...")
+    changes = 0
+    for segment in Segments():
+        for head in Heads( segment, SegEnd(segment) ):
+            thing = Thing(head)
+            if not thing.isFunction and thing.name and not thing.isNamed():
+                xrefs_from = thing.xrefsFrom()
+                if len(xrefs_from) == 1:
+                    reffedThing = xrefs_from.pop()
+                    if( reffedThing.isNamed() ):
+                        newName = "zd_" + reffedThing.name
+                        print( "%s -> %s" % ( thing, newName) )
+                        safeName(thing.addr, newName )
+                        changes += 1
+    return changes
+
+def renameFunctions():
+    print("Renaming Functions...")
+    changes = 0
+    allFunctionAddrs = Functions()
+    for funcAddr in allFunctionAddrs:
+        func = Thing(funcAddr)
+        if not func.isNamed():
+            #xrefs_to = func.xrefsTo()
+            xrefs_from = func.xrefsFrom()
+            if len(xrefs_from) == 1:
+                calledThing = xrefs_from.pop()
+                if( calledThing.isNamed() ):
+                    newName = "zf_" + calledThing.name
+                    print( "%s -> %s" % ( func, newName) )
+                    changes += 1
+                    safeName(func.addr, newName )
+    return changes
+
+
+            # if( len(xrefs_from) == 1) :
+            #     func_from = xrefs_from.pop()
+            #     func_from = Thing(func_from)
+            #     if( func_from.isNamed() ):
+            #         print( "%s -> %s" % (func_from, func) )          
+
+    
+
 def xrefToString(xref):
     return "%s -> %s : %s" % ( hex(xref.frm), hex(xref.to), XrefTypeName(xref.type))
 
@@ -36,7 +163,7 @@ def processStringXrefs(item, functionsHash):
             funcAddr = func.startEA
             functionName = Name(funcAddr)
 
-            if( functionName.startswith( 'sub_' ) or functionName.startswith('z_') ):
+            if( functionName.startswith( 'sub_' ) or functionName.startswith('zs_') ):
                 link = (funcAddr, refAddr, string )
                 links.append(link)
 
@@ -55,7 +182,8 @@ def processStringXrefs(item, functionsHash):
 
  
 
-def main():
+def renameStrings():
+    print("Renaming strings...")
     allStrings = Strings(False)
     allStrings.setup( strtypes = Strings.STR_C )
     # key : function EA
@@ -75,12 +203,30 @@ def main():
         refAddr = link[1]
         string  = link[2]
         oldName = Name(funcAddr)
-        newName = 'z_%s' % sanitizeString(string)
-        print( "%s() -> %s" % ( oldName, newName ) )
-        MakeNameEx( funcAddr , newName, SN_NOWARN) 
+        newName = 'zs_%s' % sanitizeString(string)
+        if oldName != newName:
+            print( "%s() -> %s" % ( oldName, newName ) )
+            safeName( funcAddr , newName ) 
+    
+        
+def main():
+
+
+    renameStrings()
+    changes = 1
+    iteration = 0
+    while changes > 0:
+        iteration += 1
+        changes = 0
+        print( "Iteration %d." % iteration )
+        changes += renameData()
+        print( "Iteration %d." % iteration )
+        changes += renameFunctions()
+        print( "Iteration %d had %d changes" % (iteration, changes ) )
+    
 
     print("Done!")
 
-
-
-main()
+if __name__ == '__main__':
+    #tester()
+    main()
