@@ -26,6 +26,7 @@ def safeName( addr, baseName ):
         ret = MakeNameEx( addr, newName,  SN_NOCHECK | SN_AUTO | SN_NOWARN )
         if ret != 0:
             return
+    raise ("Unable to name variable")
     
 
 class Thing:
@@ -228,6 +229,9 @@ def tester():
     print("%d -> %d" % ( len(tos), len(froms) ) )
     for f in froms:
         print("%s - %x" % (f, f.addr) )
+
+
+
 def main():
 
     fixupIdaStringNames()
@@ -247,5 +251,5 @@ def main():
     print("Done!")
 
 if __name__ == '__main__':
-    tester()
-    #main()
+    #tester()
+    main()
