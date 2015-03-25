@@ -208,10 +208,21 @@ def renameStrings():
             print( "%s() -> %s" % ( oldName, newName ) )
             safeName( funcAddr , newName ) 
     
-        
+def fixupIdaStringNames():
+    for s in Strings():
+        name = Name(s.ea)
+        if name and name.startswith('a'):
+            newName = "a_%s" % sanitizeString(str(s))
+            newName = newName[:128]
+            print("%s -> %s" % (name, newName) )
+            safeName( s.ea, newName );
+
+
+
+
 def main():
 
-
+    fixupIdaStringNames()
     renameStrings()
     changes = 1
     iteration = 0
@@ -228,5 +239,5 @@ def main():
     print("Done!")
 
 if __name__ == '__main__':
-    #tester()
+    #fixupIdaStringNames()
     main()
