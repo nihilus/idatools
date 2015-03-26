@@ -104,14 +104,17 @@ class Thing:
             fromAddrs = FuncItems( self.addr )
         else:
             fromAddrs = [self.addr]
-        i = 0
+
+
         for fromAddr in fromAddrs:
             for xrefFrom in XrefsFrom( fromAddr, 0 ):
                 # Make sure it's not self referential
+                # this does sometimes result in false positives because of the end
+                # condition, but you can see why that might be beneficial most of the
+                # time
                 if xrefFrom.to < self.addr or xrefFrom.to > self.endEA: 
                     self.xrefs.add(xrefFrom.to)
-                    i += 1
-                    if i > 1:
+                    if len(self.xrefs) > 1:
                         return self.xrefs
 
         return self.xrefs
