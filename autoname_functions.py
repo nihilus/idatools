@@ -7,14 +7,99 @@
 # Weston Hopkins
 # August 2014
 #
-
+from __future__ import division
 from idaapi     import *
 from idautils   import *
 import re
 
 
-BADPREFIXES_RE  = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
-AUTONAMED_RE    = re.compile( r"^z.?_" )
+# Change this higher if you want less names associated with each other.
+# lower will give more false positives
+PROBABILITY_CUTTOFF = 0.5
+
+BADPREFIXES_RE      = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
+AUTONAMED_RE        = re.compile( r"^z.?_" )
+
+
+
+##############################################################################
+# MarkovModel
+##############################################################################
+class MarkovModel:
+
+    ##############################################################################
+    def __init__(self):
+        self.states = {}
+
+    ##############################################################################
+    def addTransition( self, fromStateID, toStateID ):
+        
+        if not fromStateID in self.states:
+            self.states[fromStateID] = MarkovState(fromStateID)
+
+        self.states[fromStateID].addTransition( toStateID )
+
+    ##############################################################################
+    def cull( self, cutoffWeight ):
+        for sourceID in self.states:
+            source = self.states[sourceID]
+            edges = source.edges
+            cullList = []
+            for destID in edges:
+                if source.weight(destID) < cutoffWeight:
+                    cullList.append(destID)
+            for destID in cullList:
+                del source.edges[destID]
+
+##############################################################################
+# MarkovHashable
+##############################################################################
+class MarkovHashable:
+
+    ##############################################################################
+    def __init__(self, stateID):
+        self.stateID    = stateID
+
+    ##############################################################################
+    def __hash__( self ):        
+        return self.stateID
+
+    ##############################################################################
+    def __eq__(self, other ):
+        return other.stateID == self.stateID
+
+    ##############################################################################
+    def __cmp__( self, other ):
+        return self.stateID - other.stateID
+
+    ##############################################################################
+    def __repr__(self):
+        return "%x" % self.stateID
+
+
+##############################################################################
+# MarkovState
+##############################################################################
+class MarkovState(MarkovHashable):
+
+    def __init__(self, stateID):
+        MarkovHashable.__init__(self, stateID)        
+
+        self.transistions_total     = 0
+        self.edges                  = {}
+
+
+    def addTransition( self, toStateID ):
+        if not toStateID in self.edges:
+            self.edges[toStateID] = 0
+
+        self.edges[toStateID]   += 1
+        self.transistions_total += 1
+
+    def weight( self, toStateID ):        
+        return self.edges[toStateID] /   self.transistions_total
+
+
 
 
 ##############################################################################
@@ -23,13 +108,12 @@ AUTONAMED_RE    = re.compile( r"^z.?_" )
 class Stats:
     renamesTotal        = 0
 
-
 ##############################################################################
 # stripExistingPrefix()
 ##############################################################################
 def stripExistingPrefix( name ):
     if AUTONAMED_RE.match(name):
-        return name[3:]
+        return name[2:]
     else:
         return name
 
@@ -38,7 +122,7 @@ def stripExistingPrefix( name ):
 ##############################################################################
 def safeName( addr, baseName, oldName ):
 
-    if oldName == baseName:
+    if oldName == baseName or oldName.startswith(baseName):
         return
 
     newName = baseName
@@ -60,6 +144,7 @@ def safeName( addr, baseName, oldName ):
 ##############################################################################
 class Thing:
 
+    #########################################################################
     def __init__( self, addr ):
         self.isFunction         = None
         self.xrefs              = None
@@ -80,23 +165,14 @@ class Thing:
         if testName:
             self.name = testName
 
-    # def _xrefsTo(self):
-    #     xrefs = set()
-    #     i=0
-    #     for xref in XrefsTo( self.addr, 0 ) :
-    #         xrefs.add(Thing(xref.frm))
-    #         i += 1
-    #         if i > 2:
-    #             return xrefs
-    #     return xrefs
+    #########################################################################
+    # def xrefsFrom(self):
+    #     xrefThings = set()
+    #     map( lambda x: xrefThings.add(Thing(x)), self.xrefs_get() )
+    #     return xrefThings
 
-
-    def xrefsFrom(self):
-        xrefThings = set()
-        map( lambda x: xrefThings.add(Thing(x)), self.xrefs_get() )
-        return xrefThings
-
-    def xrefs_get(self):
+    #########################################################################
+    def getXrefs(self):
         if self.xrefs:
             return self.xrefs
         self.xrefs = set()        
@@ -104,7 +180,6 @@ class Thing:
             fromAddrs = FuncItems( self.addr )
         else:
             fromAddrs = [self.addr]
-
 
         for fromAddr in fromAddrs:
             for xrefFrom in XrefsFrom( fromAddr, 0 ):
@@ -114,16 +189,15 @@ class Thing:
                 # time
                 if xrefFrom.to < self.addr or xrefFrom.to > self.endEA: 
                     self.xrefs.add(xrefFrom.to)
-                    if len(self.xrefs) > 1:
-                        return self.xrefs
 
         return self.xrefs
 
 
-
+    #########################################################################
     def isNamed(self):
         return self.name and not BADPREFIXES_RE.match(self.name)
 
+    #########################################################################
     def suffix(self):
         if self.isFunction:
             return "()"
@@ -161,7 +235,7 @@ def renameData():
                 if len(xrefs_from) == 1:
                     reffedThing = xrefs_from.pop()
                     if( reffedThing.isNamed() ):
-                        newName = "zd_" + stripExistingPrefix(reffedThing.name)
+                        newName = "z_" + stripExistingPrefix(reffedThing.name)
                         #print( "%s -> %s" % ( thing, newName) )                        
                         safeName( thing.addr, newName, thing.name  )
                         changes += 1
@@ -182,7 +256,7 @@ def renameFunctions():
             if len(xrefs_from) == 1:
                 calledThing = xrefs_from.pop()
                 if( calledThing.isNamed() ):
-                    newName = "zf_" + stripExistingPrefix(calledThing.name)
+                    newName = "z_" + stripExistingPrefix(calledThing.name)
                     #print( "%s -> %s" % ( func, newName) )
                     changes += 1
                     safeName(func.addr, newName, func.name )
@@ -227,7 +301,7 @@ def processStringXrefs(item, functionsHash):
             funcAddr = func.startEA
             functionName = Name(funcAddr)
 
-            if( functionName.startswith( 'sub_' ) or functionName.startswith('zs_') ):
+            if( functionName.startswith( 'sub_' ) or functionName.startswith('z_') ):
                 link = (funcAddr, refAddr, string )
                 links.append(link)
 
@@ -246,9 +320,9 @@ def processStringXrefs(item, functionsHash):
 
  
 ##############################################################################
-# renameStrings()
+# renameFunctionsBasedOnStrings()
 ##############################################################################
-def renameStrings():
+def renameFunctionsBasedOnStrings():
     print("Renaming based on strings...")
     allStrings = Strings(False)
     allStrings.setup( strtypes = Strings.STR_C )
@@ -269,7 +343,7 @@ def renameStrings():
         refAddr = link[1]
         string  = link[2]
         oldName = Name(funcAddr)
-        newName = 'zs_%s' % sanitizeString(string)
+        newName = 'z_%s' % sanitizeString(string)
         safeName( funcAddr , newName, oldName ) 
 
 ##############################################################################
@@ -278,10 +352,73 @@ def renameStrings():
 def fixupIdaStringNames():
     for s in Strings():
         name = Name(s.ea)
-        if name and name.startswith('a'):
-            newName = "z%s" % sanitizeString(str(s))
-            newName = newName[:128]
+        if name and not name.startswith('z_'):
+            newName = "z_%s" % sanitizeString(str(s))
+            newName = newName[:256]
             safeName( s.ea, newName, name );
+
+##############################################################################
+#
+##############################################################################
+def buildMarkovModel():
+    markovModel = MarkovModel()
+
+    print("Building markov model for data...")
+    for segment in Segments():
+        seg = getseg(segment)
+        clazz = get_segm_class(seg)
+        if clazz == "CODE":
+            continue
+        for head in Heads( segment, SegEnd(segment) ):
+            thing = Thing(head)
+            if not thing.isFunction and thing.name and not thing.isNamed():
+                for xref in thing.getXrefs():
+                    markovModel.addTransition( thing.addr, xref )
+
+    print("Building markov model for functions...")
+    print("... chill mon.. this may take a while...")
+    changes = 0
+    allFunctionAddrs = Functions()
+    for funcAddr in allFunctionAddrs:
+        func = Thing(funcAddr)
+        if not func.isNamed():
+            for xref in func.getXrefs():
+                markovModel.addTransition( func.addr, xref )
+
+    print("Culling at 50%")
+    markovModel.cull(PROBABILITY_CUTTOFF)
+
+    return markovModel
+
+
+
+def tester():
+
+    fixupIdaStringNames()
+    renameFunctionsBasedOnStrings()
+    markovModel = buildMarkovModel()
+    changes = 1
+    changes_total = 0
+    iteration = 0
+    while changes > 0:
+        print(" Pass %d" % iteration )
+        changes = 0
+        for sourceID in markovModel.states:
+            sourceThing = Thing(sourceID)
+            if sourceThing.isNamed():
+                continue
+
+            source = markovModel.states[sourceID]
+            for destID in source.edges:
+                destThing = Thing(destID)
+                if destThing.isNamed():
+                    newName = "z_%s" % stripExistingPrefix( destThing.name )
+                    safeName( sourceThing.addr, newName, sourceThing.name )
+                    changes += 1
+                    changes_total += 1
+        print("Pass %d, %d changes" % (iteration, changes) )
+
+    print("DONE! %d changes total." % Stats.renamesTotal )
 
 
 ##############################################################################
@@ -290,7 +427,7 @@ def fixupIdaStringNames():
 def main():
 
     fixupIdaStringNames()
-    renameStrings()
+    renameFunctionsBasedOnStrings()
     changes = 1
     iteration = 0
     while changes > 0:
@@ -306,5 +443,5 @@ def main():
     print("Done with a total of %d changes" % Stats.renamesTotal )
 
 if __name__ == '__main__':
-    #tester()
-    main()
+    tester()
+    #main()

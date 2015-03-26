@@ -10,20 +10,24 @@ autorename_functions.py
 
 **Backup your IDB first** 
 
-This will attempt to name your functions based on strings and relationships between other functions and data in your idb.
+Will name your functions and data based on strings and other symbols using a Markov model.    All names are prefixed with ***'z_'*** .  Only symbols that
+aren't already named will be changed.  For example for functions, only names that starts with ***'sub_'*** will change.
 
-First step, it finds unique strings references by a function and renames the function based on
+First step, it renames all the strings to something sane.  I'm not a fan of IDA's aCamelCaseNaming of strings.  Unlike IDA, 
+this won't truncate a string until 256 bytes and spaces are replaced with '_' instead of an empty string.
+
+Second, it finds unique strings references by a function and renames the function based on
 the string.  This is useful if you have functions that log, but don't have symbols.  It will
 take the strings references in the log calls and rename your functions.  I need some better heuristics
-in the future for this.  String based functions are prefixed with 'zs_'
+in the future for this.  String based functions are prefixed with 'z_'
 
-The second step finds all data that has only one, named outgoing reference, and creates a name based on that.  This data is prefixed with ***'zd_'*** .
+###Markov Model
+It then builds a Markov model of the cross reference graph between data and code.  The number of cross references over the total number of outgoing edges is used to
+approximate the probability of the model.  This weights which names to generate.  An arbitrary cutoff of 0.5 was picked, but you can adjust 
+this by changing ***PROBABILITY_CUTTOFF*** at the top of the file.  Any named Xref that is >= the cutoff is used as the name of the symbol. 
 
-The last step enumerates all the unnamed functions and looks for outgoing references as well, and names the functions with a ***'zf_'*** prefix.
-
-It will continue through passes of the  2nd and 3rd steps until they are no further changes.
+Once the model is built, it will continue through passes of data and code, renaming as it goes, until there is nothing left to rename.
   
-TODO: Speed it up
 
 xref_trees.py
 -------------
