@@ -15,11 +15,10 @@ import re
 
 # Change this higher if you want less names associated with each other.
 # lower will give more false positives
-PROBABILITY_CUTTOFF = 0.5
+PROBABILITY_CUTTOFF = 0.50
 
-BADPREFIXES_RE      = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
+UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
 AUTONAMED_RE        = re.compile( r"^z.?_" )
-
 
 
 ##############################################################################
@@ -46,7 +45,7 @@ class MarkovModel:
             edges = source.edges
             cullList = []
             for destID in edges:
-                if source.weight(destID) < cutoffWeight:
+                if source.probability(destID) < cutoffWeight:
                     cullList.append(destID)
             for destID in cullList:
                 del source.edges[destID]
@@ -96,7 +95,7 @@ class MarkovState(MarkovHashable):
         self.edges[toStateID]   += 1
         self.transistions_total += 1
 
-    def weight( self, toStateID ):        
+    def probability( self, toStateID ):        
         return self.edges[toStateID] /   self.transistions_total
 
 
@@ -120,24 +119,29 @@ def stripExistingPrefix( name ):
 ##############################################################################
 # safeName()
 ##############################################################################
-def safeName( addr, baseName, oldName ):
+def safeName( addr, baseName ):
 
-    if oldName == baseName or oldName.startswith(baseName):
-        return
+    oldName = Name(addr)
+    if oldName == baseName  or oldName.startswith(baseName):
+        print( "!!! %s -> %s" % (oldName, baseName) )
+    
 
     newName = baseName
     Stats.renamesTotal += 1
 
-    for suffix in [""] +  [ str(x) for x in range(10000)]:        
-        newName = baseName + str(suffix)
-        ret = MakeNameEx( addr, newName,  SN_NOCHECK | SN_AUTO | SN_NOWARN )
-        if ret != 0:
-            print( "%s -> %s" % ( oldName, newName) )
-            return
+    sc = MakeNameEx( addr, newName,  SN_NOCHECK | SN_AUTO | SN_NOWARN )
+    i = 0
+    while sc == 0:
+        newName = baseName + str(i)
+        sc = MakeNameEx( addr, newName,  SN_NOCHECK | SN_AUTO | SN_NOWARN )
+        i += 1
+        if i > 100000:
+            errmsg = "Reached limit of autonaming.  Trying to create name %s which mean it went through %d iterations" % (newName, i)
+            print errmsg
+            raise errmsg
 
-    errorMessage =  "Unable to name variable: %s -> %s @ %s" % (oldName, baseName, newName)
-    print( errorMessage )
-    raise( errorMessage )
+    
+    print( "%s -> %s" % (oldName, newName) )
     
 ##############################################################################
 # Thing
@@ -195,7 +199,7 @@ class Thing:
 
     #########################################################################
     def isNamed(self):
-        return self.name and not BADPREFIXES_RE.match(self.name)
+        return self.name and not UNNAMED_RE.match(self.name)
 
     #########################################################################
     def suffix(self):
@@ -237,7 +241,7 @@ def renameData():
                     if( reffedThing.isNamed() ):
                         newName = "z_" + stripExistingPrefix(reffedThing.name)
                         #print( "%s -> %s" % ( thing, newName) )                        
-                        safeName( thing.addr, newName, thing.name  )
+                        safeName( thing.addr, newName  )
                         changes += 1
     return changes
 
@@ -259,7 +263,7 @@ def renameFunctions():
                     newName = "z_" + stripExistingPrefix(calledThing.name)
                     #print( "%s -> %s" % ( func, newName) )
                     changes += 1
-                    safeName(func.addr, newName, func.name )
+                    safeName(func.addr, newName )
     return changes
 
 
@@ -323,7 +327,7 @@ def processStringXrefs(item, functionsHash):
 # renameFunctionsBasedOnStrings()
 ##############################################################################
 def renameFunctionsBasedOnStrings():
-    print("Renaming based on strings...")
+    print("Renaming functions based on strings...")
     allStrings = Strings(False)
     allStrings.setup( strtypes = Strings.STR_C )
     # key : function EA
@@ -342,9 +346,11 @@ def renameFunctionsBasedOnStrings():
         link    = functionsHash[funcAddr]
         refAddr = link[1]
         string  = link[2]
-        oldName = Name(funcAddr)
-        newName = 'z_%s' % sanitizeString(string)
-        safeName( funcAddr , newName, oldName ) 
+        oldThing = Thing(funcAddr)
+        if( not oldThing.isNamed() ):
+            newName = 'z_%s' % sanitizeString(string)
+            safeName( funcAddr , newName ) 
+
 
 ##############################################################################
 # fixupIdaStringNames()
@@ -352,13 +358,13 @@ def renameFunctionsBasedOnStrings():
 def fixupIdaStringNames():
     for s in Strings():
         name = Name(s.ea)
-        if name and not name.startswith('z_'):
-            newName = "z_%s" % sanitizeString(str(s))
+        if name and not name.startswith('z'):
+            newName = "z%s" % sanitizeString(str(s))
             newName = newName[:256]
-            safeName( s.ea, newName, name );
+            safeName( s.ea, newName );
 
 ##############################################################################
-#
+# buildMarkovModel()
 ##############################################################################
 def buildMarkovModel():
     markovModel = MarkovModel()
@@ -385,20 +391,21 @@ def buildMarkovModel():
             for xref in func.getXrefs():
                 markovModel.addTransition( func.addr, xref )
 
-    print("Culling at 50%")
+    print("Culling at %d %%" % (PROBABILITY_CUTTOFF*100))
     markovModel.cull(PROBABILITY_CUTTOFF)
 
     return markovModel
 
 
-
+##############################################################################
+# main()
+##############################################################################
 def main():
 
     fixupIdaStringNames()
     renameFunctionsBasedOnStrings()
     markovModel = buildMarkovModel()
     changes = 1
-    changes_total = 0
     iteration = 0
     while changes > 0:
         print(" Pass %d" % iteration )
@@ -407,16 +414,18 @@ def main():
             sourceThing = Thing(sourceID)
             if sourceThing.isNamed():
                 continue
-
             source = markovModel.states[sourceID]
             edges = sorted( source.edges, key=source.edges.get )
             for destID in edges:
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
-                    safeName( sourceThing.addr, newName, sourceThing.name )
+                    safeName( sourceThing.addr, newName )
+                    edge = source.edges[destID]
+                    #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
                     changes += 1
-                    changes_total += 1
+                    break
+        iteration += 1
 
         print("Pass %d, %d changes" % (iteration, changes) )
 
@@ -424,7 +433,7 @@ def main():
 
 
 ##############################################################################
-# main()
+# main_old()
 ##############################################################################
 def main_old():
 
