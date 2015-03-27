@@ -29,6 +29,11 @@ this by changing ***PROBABILITY_CUTTOFF*** at the top of the file.  Any named Xr
 Once the model is built, it will continue through passes of data and code, renaming as it goes, until there is nothing left to rename.
   
 
+XTreeIDAPro
+-----------
+
+Experimental, but builds a tree view of function calls using javascript D3.
+
 xref_trees.py
 -------------
 

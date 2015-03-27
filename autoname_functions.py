@@ -119,12 +119,11 @@ def stripExistingPrefix( name ):
 ##############################################################################
 # safeName()
 ##############################################################################
-def safeName( addr, baseName ):
+def safeName( addr, baseName, msg="" ):
 
     oldName = Name(addr)
-    if oldName == baseName  or oldName.startswith(baseName):
-        print( "!!! %s -> %s" % (oldName, baseName) )
-    
+    # if oldName == baseName  or oldName.startswith(baseName):
+    #     print( "!!! %s -> %s" % (oldName, baseName) )   
 
     newName = baseName
     Stats.renamesTotal += 1
@@ -141,7 +140,7 @@ def safeName( addr, baseName ):
             raise errmsg
 
     
-    print( "%s -> %s" % (oldName, newName) )
+    print( "%s -> %s%s" % (oldName, newName, msg) )
     
 ##############################################################################
 # Thing
@@ -420,7 +419,8 @@ def main():
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
-                    safeName( sourceThing.addr, newName )
+                    msg = ": probability = %0.3f" % source.probability(destID)
+                    safeName( sourceThing.addr, newName, msg )
                     edge = source.edges[destID]
                     #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
                     changes += 1
