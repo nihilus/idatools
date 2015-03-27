@@ -224,7 +224,8 @@ def startServer(tree):
 	homedir = os.path.dirname( sys.argv[0] )
 	os.chdir(homedir)
 	print("Starting server in %s" % homedir )
-	httpd = BaseHTTPServer.HTTPServer( ("0.0.0.0", 6969), XTreeServer )
+	print(" go to: http://localhost:6969   and hit Cancel in IDA when done")
+	httpd = BaseHTTPServer.HTTPServer( ("127.0.0.1", 6969), XTreeServer )
 	httpd.xtree_json = json.dumps(tree)
 	try:
 		httpd.serve_forever()

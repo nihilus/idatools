@@ -392,7 +392,7 @@ def buildMarkovModel():
 
 
 
-def tester():
+def main():
 
     fixupIdaStringNames()
     renameFunctionsBasedOnStrings()
@@ -409,13 +409,15 @@ def tester():
                 continue
 
             source = markovModel.states[sourceID]
-            for destID in source.edges:
+            edges = sorted( source.edges, key=source.edges.get )
+            for destID in edges:
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
                     safeName( sourceThing.addr, newName, sourceThing.name )
                     changes += 1
                     changes_total += 1
+
         print("Pass %d, %d changes" % (iteration, changes) )
 
     print("DONE! %d changes total." % Stats.renamesTotal )
@@ -424,7 +426,7 @@ def tester():
 ##############################################################################
 # main()
 ##############################################################################
-def main():
+def main_old():
 
     fixupIdaStringNames()
     renameFunctionsBasedOnStrings()
@@ -443,5 +445,5 @@ def main():
     print("Done with a total of %d changes" % Stats.renamesTotal )
 
 if __name__ == '__main__':
-    tester()
-    #main()
+    main()
+    
