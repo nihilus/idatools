@@ -21,7 +21,6 @@ import 	webbrowser
 
 functionAddresses = {}
 
-DONE = False
 
 BLACKLIST = ['alloc', 'zzz_']
 
@@ -47,13 +46,12 @@ class XTree(dict):
 class XTreeServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 	def do_GET(self):
-		global DONE
 		if self.path == "/xtree.json":
 			self.send_response(200)
 			self.send_header('Content-type', 'application/javascript')
 			self.end_headers()
 			self.wfile.write(self.server.xtree_json)
-			DONE = True
+			self.server.finished = True
 		else:
 			return SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
 
@@ -223,19 +221,20 @@ def dumpXrefsTo( pc, callStack, functionCallCounts ):
 
 
 def startServer(tree):
-	global DONE
+	
 	homedir = os.path.dirname( sys.argv[0] )
 	os.chdir(homedir)
 	print("Starting server in %s" % homedir )
 	print(" go to: http://localhost:6969   and hit Cancel in IDA when done")
 	webbrowser.open("http://localhost:6969")
 	httpd = BaseHTTPServer.HTTPServer( ("127.0.0.1", 6969), XTreeServer )
+	httpd.finished = False
 	httpd.xtree_json = json.dumps(tree)
-	while not DONE:
+	while not httpd.finished:
 		try:
 			httpd.handle_request()
 		except KeyboardInterrupt:
-			DONE = True
+			httpd.finished = True
 	httpd.server_close()
 	print("Done")
 
