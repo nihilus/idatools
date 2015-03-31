@@ -15,7 +15,7 @@ import re
 
 # Change this higher if you want less names associated with each other.
 # lower will give more false positives
-PROBABILITY_CUTTOFF = 0.50
+PROBABILITY_CUTTOFF = 0.10
 
 UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
 AUTONAMED_RE        = re.compile( r"^z.?_" )
@@ -28,13 +28,20 @@ class MarkovModel:
 
     ##############################################################################
     def __init__(self):
-        self.states = {}
+        self.states     = {}
+        self.xrefs      = {}
+
 
     ##############################################################################
     def addTransition( self, fromStateID, toStateID ):
         
         if not fromStateID in self.states:
-            self.states[fromStateID] = MarkovState(fromStateID)
+            self.states[fromStateID] = MarkovState(fromStateID, self)
+
+        if not toStateID in self.xrefs:
+            self.xrefs[toStateID] = 0
+
+        self.xrefs[toStateID] += 1
 
         self.states[fromStateID].addTransition( toStateID )
 
@@ -56,8 +63,9 @@ class MarkovModel:
 class MarkovHashable:
 
     ##############################################################################
-    def __init__(self, stateID):
+    def __init__(self, stateID, model):
         self.stateID    = stateID
+        self.model      = model
 
     ##############################################################################
     def __hash__( self ):        
@@ -81,11 +89,12 @@ class MarkovHashable:
 ##############################################################################
 class MarkovState(MarkovHashable):
 
-    def __init__(self, stateID):
-        MarkovHashable.__init__(self, stateID)        
+    def __init__(self, stateID, model):
+        MarkovHashable.__init__(self, stateID, model)        
 
         self.transistions_total     = 0
         self.edges                  = {}
+        self.model                  = model
 
 
     def addTransition( self, toStateID ):
@@ -95,9 +104,17 @@ class MarkovState(MarkovHashable):
         self.edges[toStateID]   += 1
         self.transistions_total += 1
 
-    def probability( self, toStateID ):        
-        return self.edges[toStateID] /   self.transistions_total
+    def probabilityString( self, toStateID ):
+        return ": prob %0.3f = %d / %d" % (
+            self.probability(toStateID),
+            self.edges[toStateID],
+            self.model.xrefs[toStateID]
+            )
 
+    def probability( self, toStateID ):
+        return self.edges[toStateID] / self.model.xrefs[toStateID]
+
+        #return self.edges[toStateID] /   self.transistions_total
 
 
 
@@ -178,7 +195,8 @@ class Thing:
     def getXrefs(self):
         if self.xrefs:
             return self.xrefs
-        self.xrefs = set()        
+        
+        self.xrefs = []
         if self.isFunction:
             fromAddrs = FuncItems( self.addr )
         else:
@@ -191,7 +209,8 @@ class Thing:
                 # condition, but you can see why that might be beneficial most of the
                 # time
                 if xrefFrom.to < self.addr or xrefFrom.to > self.endEA: 
-                    self.xrefs.add(xrefFrom.to)
+                    #self.xrefs.add(xrefFrom.to)
+                    self.xrefs.append(xrefFrom.to)
 
         return self.xrefs
 
@@ -402,7 +421,6 @@ def buildMarkovModel():
 def main():
 
     fixupIdaStringNames()
-    renameFunctionsBasedOnStrings()
     markovModel = buildMarkovModel()
     changes = 1
     iteration = 0
@@ -419,12 +437,16 @@ def main():
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
-                    msg = ": probability = %0.3f" % source.probability(destID)
+                    #msg = ": probability = %0.3f" % source.probability(destID)
+                    msg = ": " + source.probabilityString(destID)
                     safeName( sourceThing.addr, newName, msg )
                     edge = source.edges[destID]
                     #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
                     changes += 1
                     break
+        if iteration==0:
+            renameFunctionsBasedOnStrings()
+            changes += 1
         iteration += 1
 
         print("Pass %d, %d changes" % (iteration, changes) )
