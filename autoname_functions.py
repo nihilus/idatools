@@ -15,7 +15,8 @@ import re
 
 # Change this higher if you want less names associated with each other.
 # lower will give more false positives
-PROBABILITY_CUTTOFF = 0.10
+PROBABILITY_CUTTOFF         = 0.10
+STRING_PROBABILITY_CUTTOFF  = 0.10
 
 UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
 AUTONAMED_RE        = re.compile( r"^z.?_" )
@@ -414,6 +415,24 @@ def buildMarkovModel():
 
     return markovModel
 
+##############################################################################
+#
+##############################################################################
+def buildStringModel():
+    stringModel = MarkovModel()
+
+    print("Building markov model for strings...")
+    allStrings  = Strings(False)
+    allStrings.setup( strtypes = Strings.STR_C )
+
+    for index, stringItem in enumerate(allStrings):
+        for xref in XrefsTo(stringItem.ea, 0):
+            xref_addr = xref.frm
+            stringModel.addTransition( xref_addr, stringItem.ea )
+
+    stringModel.cull(STRING_PROBABILITY_CUTTOFF)
+    return stringModel
+
 
 ##############################################################################
 # main()
@@ -421,6 +440,25 @@ def buildMarkovModel():
 def main():
 
     fixupIdaStringNames()
+
+    stringModel = buildStringModel()
+    for sourceID in stringModel.states:
+        sourceThing = Thing(sourceID)
+        if sourceThing.isNamed():
+            continue
+        source = stringModel.states[sourceID]
+        edges = sorted( source.edges, key=source.edges.get )
+        for destID in edges:
+            string = GetString(destID)
+            if string:
+                newName = "z_%s" % sanitizeString(string)
+                #msg = ": probability = %0.3f" % source.probability(destID)
+                msg = ": " + source.probabilityString(destID)
+                safeName( sourceThing.addr, newName, msg )
+                edge = source.edges[destID]
+                #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
+                break
+
     markovModel = buildMarkovModel()
     changes = 1
     iteration = 0
