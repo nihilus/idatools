@@ -15,7 +15,7 @@ import re
 
 # Change this higher if you want less names associated with each other.
 # lower will give more false positives
-PROBABILITY_CUTTOFF         = 0.10
+PROBABILITY_CUTTOFF         = 0.5
 STRING_PROBABILITY_CUTTOFF  = 0.10
 
 UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
@@ -28,16 +28,22 @@ AUTONAMED_RE        = re.compile( r"^z.?_" )
 class MarkovModel:
 
     ##############################################################################
-    def __init__(self):
+    def __init__(self, forStrings ):
         self.states     = {}
         self.xrefs      = {}
+        self.forStrings = forStrings
 
 
     ##############################################################################
     def addTransition( self, fromStateID, toStateID ):
         
         if not fromStateID in self.states:
-            self.states[fromStateID] = MarkovState(fromStateID, self)
+            newState = None
+            if self.forStrings:
+                newState = MarkovStateStrings(fromStateID, self)
+            else:
+                newState = MarkovStateCalls(fromStateID, self)
+            self.states[fromStateID] = newState
 
         if not toStateID in self.xrefs:
             self.xrefs[toStateID] = 0
@@ -105,18 +111,35 @@ class MarkovState(MarkovHashable):
         self.edges[toStateID]   += 1
         self.transistions_total += 1
 
-    def probabilityString( self, toStateID ):
+    def probabilityToString( self, toStateID ):
         return ": prob %0.3f = %d / %d" % (
             self.probability(toStateID),
             self.edges[toStateID],
             self.model.xrefs[toStateID]
             )
 
+##############################################################################
+# MarkovStateStrings
+##############################################################################
+class MarkovStateStrings(MarkovState):
+
+    def __init__(self, stateID, model):
+        MarkovState.__init__(self, stateID, model) 
+
     def probability( self, toStateID ):
-        return self.edges[toStateID] / self.model.xrefs[toStateID]
+        return self.edges[toStateID] / self.model.xrefs[toStateID]        
 
-        #return self.edges[toStateID] /   self.transistions_total
 
+##############################################################################
+# MarkovStateCalls
+##############################################################################
+class MarkovStateCalls(MarkovState):
+
+    def __init__(self, stateID, model):
+        MarkovState.__init__(self, stateID, model) 
+
+    def probability( self, toStateID ):
+        return self.edges[toStateID] /   self.transistions_total
 
 
 ##############################################################################
@@ -303,6 +326,8 @@ def xrefToString(xref):
 # sanitizeString()
 ##############################################################################
 def sanitizeString(s):
+    if not s:
+        return s
     ret = s
     ret =  re.sub( r'%[\+ -#0]*[\d\.]*[lhLzjt]{0,2}[diufFeEgGxXoscpaAn]', '_', ret  )
     ret =  re.sub( r'[^a-zA-Z0-9_]+', '_', ret )
@@ -383,10 +408,10 @@ def fixupIdaStringNames():
             safeName( s.ea, newName );
 
 ##############################################################################
-# buildMarkovModel()
+# buildCallsModel()
 ##############################################################################
-def buildMarkovModel():
-    markovModel = MarkovModel()
+def buildCallsModel():
+    markovModel = MarkovModel(False)
 
     print("Building markov model for data...")
     for segment in Segments():
@@ -410,7 +435,7 @@ def buildMarkovModel():
             for xref in func.getXrefs():
                 markovModel.addTransition( func.addr, xref )
 
-    print("Culling at %d %%" % (PROBABILITY_CUTTOFF*100))
+    print("Culling at %d %%" % (PROBABILITY_CUTTOFF*100) )
     markovModel.cull(PROBABILITY_CUTTOFF)
 
     return markovModel
@@ -418,20 +443,51 @@ def buildMarkovModel():
 ##############################################################################
 #
 ##############################################################################
-def buildStringModel():
-    stringModel = MarkovModel()
+def runStringsModel( filterEnabled ):
+    validIdentifierRegex = re.compile( r"^[_a-zA-Z0-9]+$" )
 
-    print("Building markov model for strings...")
+    stringModel = MarkovModel(True)
+
+    suffix = None
+    if filterEnabled:
+        suffix = "enabled"
+    else:
+        suffix = "disabled"
+
+    print("Building markov model for strings with filter %s." % suffix)
     allStrings  = Strings(False)
     allStrings.setup( strtypes = Strings.STR_C )
 
     for index, stringItem in enumerate(allStrings):
-        for xref in XrefsTo(stringItem.ea, 0):
-            xref_addr = xref.frm
-            stringModel.addTransition( xref_addr, stringItem.ea )
+        string = str(stringItem)
+        if filterEnabled and validIdentifierRegex.match(string):
+            for xref in XrefsTo(stringItem.ea, 0):
+                xref_addr = xref.frm
+                stringModel.addTransition( xref_addr, stringItem.ea )
+    
 
+    print("Culling at %d %%" % (STRING_PROBABILITY_CUTTOFF*100) )
     stringModel.cull(STRING_PROBABILITY_CUTTOFF)
-    return stringModel
+    
+    for sourceID in stringModel.states:
+        sourceThing = Thing(sourceID)
+        if sourceThing.isNamed():
+            continue
+        source = stringModel.states[sourceID]
+        edges = sorted( source.edges, key=source.probability )
+        for destID in edges:
+            string = GetString(destID)
+            if not string:
+                continue
+            string = sanitizeString(string)
+            if  len(string)>4:
+                newName = "z_%s" % string
+                #msg = ": probability = %0.3f" % source.probability(destID)
+                msg = ": %s" % ( source.probabilityToString(destID) )
+                safeName( sourceThing.addr, newName, msg )
+                edge = source.edges[destID]
+                #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
+                break
 
 
 ##############################################################################
@@ -441,25 +497,10 @@ def main():
 
     fixupIdaStringNames()
 
-    stringModel = buildStringModel()
-    for sourceID in stringModel.states:
-        sourceThing = Thing(sourceID)
-        if sourceThing.isNamed():
-            continue
-        source = stringModel.states[sourceID]
-        edges = sorted( source.edges, key=source.edges.get )
-        for destID in edges:
-            string = GetString(destID)
-            if string:
-                newName = "z_%s" % sanitizeString(string)
-                #msg = ": probability = %0.3f" % source.probability(destID)
-                msg = ": " + source.probabilityString(destID)
-                safeName( sourceThing.addr, newName, msg )
-                edge = source.edges[destID]
-                #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
-                break
+    runStringsModel(True)
+    runStringsModel(False)
 
-    markovModel = buildMarkovModel()
+    markovModel = buildCallsModel()
     changes = 1
     iteration = 0
     while changes > 0:
@@ -470,13 +511,13 @@ def main():
             if sourceThing.isNamed():
                 continue
             source = markovModel.states[sourceID]
-            edges = sorted( source.edges, key=source.edges.get )
+            edges = sorted( source.edges, key=source.probability )
             for destID in edges:
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
                     #msg = ": probability = %0.3f" % source.probability(destID)
-                    msg = ": " + source.probabilityString(destID)
+                    msg = ": " + source.probabilityToString(destID)
                     safeName( sourceThing.addr, newName, msg )
                     edge = source.edges[destID]
                     #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
