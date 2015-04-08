@@ -112,10 +112,11 @@ class MarkovState(MarkovHashable):
         self.transistions_total += 1
 
     def probabilityToString( self, toStateID ):
-        return ": prob %0.3f = %d / %d" % (
+        return ": prob %0.3f.  %d edges,  %d xrefs, %d transitions" % (
             self.probability(toStateID),
             self.edges[toStateID],
-            self.model.xrefs[toStateID]
+            self.model.xrefs[toStateID],
+            self.transistions_total
             )
 
 ##############################################################################
