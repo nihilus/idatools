@@ -410,7 +410,7 @@ def fixupIdaStringNames():
 ##############################################################################
 # buildCallsModel()
 ##############################################################################
-def buildCallsModel():
+def runCallsModel():
     markovModel = MarkovModel(False)
 
     print("Building markov model for data...")
@@ -438,7 +438,35 @@ def buildCallsModel():
     print("Culling at %d %%" % (PROBABILITY_CUTTOFF*100) )
     markovModel.cull(PROBABILITY_CUTTOFF)
 
-    return markovModel
+    changes = 1
+    iteration = 0
+    while changes > 0:
+        print(" Pass %d" % iteration )
+        changes = 0
+        for sourceID in markovModel.states:
+            sourceThing = Thing(sourceID)
+            if sourceThing.isNamed():
+                continue
+            source = markovModel.states[sourceID]
+            edges = sorted( source.edges, key=source.probability )
+            for destID in edges:
+                destThing = Thing(destID)
+                if destThing.isNamed():
+                    newName = "z_%s" % stripExistingPrefix( destThing.name )
+                    #msg = ": probability = %0.3f" % source.probability(destID)
+                    msg = ": " + source.probabilityToString(destID)
+                    safeName( sourceThing.addr, newName, msg )
+                    edge = source.edges[destID]
+                    #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
+                    changes += 1
+                    break
+        if iteration==0:
+            renameFunctionsBasedOnStrings()
+            changes += 1
+        iteration += 1
+
+        print("Pass %d, %d changes" % (iteration, changes) )
+    return changes
 
 ##############################################################################
 #
@@ -459,13 +487,16 @@ def runStringsModel( filterEnabled ):
     allStrings.setup( strtypes = Strings.STR_C )
 
     for index, stringItem in enumerate(allStrings):
+        stringAddr = stringItem.ea
         string = str(stringItem)
-        if filterEnabled and validIdentifierRegex.match(string):
-            for xref in XrefsTo(stringItem.ea, 0):
-                xref_addr = xref.frm
-                stringModel.addTransition( xref_addr, stringItem.ea )
-    
+        if not filterEnabled or validIdentifierRegex.match(string):
+            for xref in XrefsTo(stringAddr, 0):
+                functionAddr = xref.frm
+                function = Thing(functionAddr)
+                functionAddr = function.addr
+                stringModel.addTransition( functionAddr, stringAddr )
 
+    
     print("Culling at %d %%" % (STRING_PROBABILITY_CUTTOFF*100) )
     stringModel.cull(STRING_PROBABILITY_CUTTOFF)
     
@@ -496,39 +527,10 @@ def runStringsModel( filterEnabled ):
 def main():
 
     fixupIdaStringNames()
-
     runStringsModel(True)
     runStringsModel(False)
 
-    markovModel = buildCallsModel()
-    changes = 1
-    iteration = 0
-    while changes > 0:
-        print(" Pass %d" % iteration )
-        changes = 0
-        for sourceID in markovModel.states:
-            sourceThing = Thing(sourceID)
-            if sourceThing.isNamed():
-                continue
-            source = markovModel.states[sourceID]
-            edges = sorted( source.edges, key=source.probability )
-            for destID in edges:
-                destThing = Thing(destID)
-                if destThing.isNamed():
-                    newName = "z_%s" % stripExistingPrefix( destThing.name )
-                    #msg = ": probability = %0.3f" % source.probability(destID)
-                    msg = ": " + source.probabilityToString(destID)
-                    safeName( sourceThing.addr, newName, msg )
-                    edge = source.edges[destID]
-                    #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
-                    changes += 1
-                    break
-        if iteration==0:
-            renameFunctionsBasedOnStrings()
-            changes += 1
-        iteration += 1
-
-        print("Pass %d, %d changes" % (iteration, changes) )
+    runCallsModel()
 
     print("DONE! %d changes total." % Stats.renamesTotal )
 
