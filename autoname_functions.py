@@ -15,7 +15,7 @@ import re
 
 # Change this higher if you want less names associated with each other.
 # lower will give more false positives
-PROBABILITY_CUTTOFF         = 0.5
+PROBABILITY_CUTTOFF         = 0.50
 STRING_PROBABILITY_CUTTOFF  = 0.10
 
 UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
@@ -412,19 +412,21 @@ def fixupIdaStringNames():
 # buildCallsModel()
 ##############################################################################
 def runCallsModel():
+
     markovModel = MarkovModel(False)
 
     print("Building markov model for data...")
     for segment in Segments():
         seg = getseg(segment)
         clazz = get_segm_class(seg)
+        # We don't want to include functions since we'll do that in the next block
         if clazz == "CODE":
             continue
         for head in Heads( segment, SegEnd(segment) ):
-            thing = Thing(head)
-            if not thing.isFunction and thing.name and not thing.isNamed():
-                for xref in thing.getXrefs():
-                    markovModel.addTransition( thing.addr, xref )
+            thing = Thing(head)        
+            for xref in thing.getXrefs():
+                markovModel.addTransition( thing.addr, xref )
+
 
     print("Building markov model for functions...")
     print("... chill mon.. this may take a while...")
@@ -435,6 +437,7 @@ def runCallsModel():
         if not func.isNamed():
             for xref in func.getXrefs():
                 markovModel.addTransition( func.addr, xref )
+
 
     print("Culling at %d %%" % (PROBABILITY_CUTTOFF*100) )
     markovModel.cull(PROBABILITY_CUTTOFF)
