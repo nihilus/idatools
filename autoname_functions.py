@@ -330,6 +330,7 @@ def sanitizeString(s):
     if not s:
         return s
     ret = s
+    ret =  re.sub( r'\0+', '', ret )
     ret =  re.sub( r'%[\+ -#0]*[\d\.]*[lhLzjt]{0,2}[diufFeEgGxXoscpaAn]', '_', ret  )
     ret =  re.sub( r'[^a-zA-Z0-9_]+', '_', ret )
     ret =  re.sub( r'_+', '_', ret )
@@ -374,7 +375,7 @@ def processStringXrefs(item, functionsHash):
 def renameFunctionsBasedOnStrings():
     print("Renaming functions based on strings...")
     allStrings = Strings(False)
-    allStrings.setup( strtypes = Strings.STR_C )
+    allStrings.setup( strtypes = Strings.STR_C |Strings.STR_UNICODE )
     # key : function EA
     # value : ( Xref, string )
 
@@ -401,7 +402,9 @@ def renameFunctionsBasedOnStrings():
 # fixupIdaStringNames()
 ##############################################################################
 def fixupIdaStringNames():
-    for s in Strings():
+    allStrings  = Strings(False)
+    allStrings.setup( strtypes = Strings.STR_C | Strings.STR_UNICODE )
+    for index, s in enumerate(allStrings):
         name = Name(s.ea)
         if name and not name.startswith('z'):
             newName = "z%s" % sanitizeString(str(s))
@@ -488,7 +491,7 @@ def runStringsModel( filterEnabled ):
 
     print("Building markov model for strings with filter %s." % suffix)
     allStrings  = Strings(False)
-    allStrings.setup( strtypes = Strings.STR_C )
+    allStrings.setup( strtypes = Strings.STR_C | Strings.STR_UNICODE )
 
     for index, stringItem in enumerate(allStrings):
         stringAddr = stringItem.ea
