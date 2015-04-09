@@ -164,8 +164,12 @@ def stripExistingPrefix( name ):
 def safeName( addr, baseName, msg="" ):
 
     oldName = Name(addr)
+    if not oldName:
+        msg = "!!! Should not rename something that previously had no name: %s -> %s @ %x: %s" % (oldName, baseName, addr, msg)
+        print( msg )
+        raise( msg )
     # if oldName == baseName  or oldName.startswith(baseName):
-    #     print( "!!! %s -> %s" % (oldName, baseName) )   
+    
 
     newName = baseName
     Stats.renamesTotal += 1
@@ -262,6 +266,22 @@ class Thing:
 
     def __cmp__(self, other):
         return  self.addr - other.addr
+
+##############################################################################
+#
+##############################################################################
+def resetExistingNames():
+    print("Resetting existing names...")
+    for segment in Segments():
+        seg = getseg(segment)
+        clazz = get_segm_class(seg)
+        # We don't want to include functions since we'll do that in the next block
+        for head in Heads( segment, SegEnd(segment) ):
+            name = Name(head)
+            if name and name.startswith("z_"):
+                print(name)
+                MakeName( head, "" )
+    print("Done resetting names...")
 
 
 ##############################################################################
@@ -426,9 +446,10 @@ def runCallsModel():
         if clazz == "CODE":
             continue
         for head in Heads( segment, SegEnd(segment) ):
-            thing = Thing(head)        
-            for xref in thing.getXrefs():
-                markovModel.addTransition( thing.addr, xref )
+            thing = Thing(head)
+            if thing.name:
+                for xref in thing.getXrefs():
+                    markovModel.addTransition( thing.addr, xref )
 
 
     print("Building markov model for functions...")
@@ -460,11 +481,9 @@ def runCallsModel():
                 destThing = Thing(destID)
                 if destThing.isNamed():
                     newName = "z_%s" % stripExistingPrefix( destThing.name )
-                    #msg = ": probability = %0.3f" % source.probability(destID)
                     msg = ": " + source.probabilityToString(destID)
                     safeName( sourceThing.addr, newName, msg )
                     edge = source.edges[destID]
-                    #print( "\t%f probability: %d / %d" % ( source.probability(destID), edge, source.transistions_total) ) 
                     changes += 1
                     break
         if iteration==0:
@@ -498,10 +517,9 @@ def runStringsModel( filterEnabled ):
         string = str(stringItem)
         if not filterEnabled or validIdentifierRegex.match(string):
             for xref in XrefsTo(stringAddr, 0):
-                functionAddr = xref.frm
-                function = Thing(functionAddr)
-                functionAddr = function.addr
-                stringModel.addTransition( functionAddr, stringAddr )
+                thing = Thing(xref.frm)
+                if thing.name:
+                    stringModel.addTransition( thing.addr, stringAddr )
 
     
     print("Culling at %d %%" % (STRING_PROBABILITY_CUTTOFF*100) )
@@ -532,7 +550,7 @@ def runStringsModel( filterEnabled ):
 # main()
 ##############################################################################
 def main():
-
+    resetExistingNames()
     fixupIdaStringNames()
     runStringsModel(True)
     runStringsModel(False)

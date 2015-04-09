@@ -243,6 +243,9 @@ def main():
 	print sys.argv
 
 	functionEA = ChooseFunction("Select function to generate graph")
+	if BADADDR == functionEA:
+		print("No function selected. exiting... ")
+		return
 
 	Message( "=" * 80 + "\n" )
 	Message("Cross References From\n")
