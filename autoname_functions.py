@@ -182,8 +182,8 @@ def safeName( addr, baseName, msg="" ):
         i += 1
         if i > 100000:
             errmsg = "Reached limit of autonaming.  Trying to create name %s which mean it went through %d iterations" % (newName, i)
-            print errmsg
-            raise errmsg
+            print( errmsg )
+            raise( errmsg )
 
     
     print( "%s -> %s%s" % (oldName, newName, msg) )
@@ -201,7 +201,7 @@ class Thing:
         self.isCode             = False
         self.isData             = False
 
-        segmentClazz = get_segm_class(getseg(addr))
+        segmentClazz = get_segm_class( getseg(addr) )
         if      "CODE" == segmentClazz:
             self.isCode = True
         if      "DATA" == segmentClazz:
@@ -348,14 +348,6 @@ def renameFunctions():
                     safeName(func.addr, newName )
     return changes
 
-
-            # if( len(xrefs_from) == 1) :
-            #     func_from = xrefs_from.pop()
-            #     func_from = Thing(func_from)
-            #     if( func_from.isNamed() ):
-            #         print( "%s -> %s" % (func_from, func) )          
-
-    
 ##############################################################################
 # xrefToString()
 ##############################################################################
