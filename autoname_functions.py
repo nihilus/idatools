@@ -18,8 +18,8 @@ import re
 PROBABILITY_CUTTOFF         = 0.50
 STRING_PROBABILITY_CUTTOFF  = 0.10
 
-UNNAMED_RE          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
-AUTONAMED_RE        = re.compile( r"^z.?_" )
+UNNAMED_REGEX          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
+AUTONAMED_REGEX        = re.compile( r"^z[cdow]?_" )
 
 
 ##############################################################################
@@ -153,8 +153,8 @@ class Stats:
 # stripExistingPrefix()
 ##############################################################################
 def stripExistingPrefix( name ):
-    if AUTONAMED_RE.match(name):
-        return name[2:]
+    if AUTONAMED_REGEX.match(name):
+        return AUTONAMED_REGEX.sub( '', name )
     else:
         return name
 
@@ -195,15 +195,23 @@ class Thing:
 
     #########################################################################
     def __init__( self, addr ):
-        self.isFunction         = None
+        self.isFunction         = False
         self.xrefs              = None
         self.endEA              = None
+        self.isCode             = False
+        self.isData             = False
+
+        segmentClazz = get_segm_class(getseg(addr))
+        if      "CODE" == segmentClazz:
+            self.isCode = True
+        if      "DATA" == segmentClazz:
+            self.isData = True
 
         funcAddr = get_func(addr)
         if funcAddr:
             self.addr       = funcAddr.startEA
             self.endEA      = funcAddr.endEA
-            self.isFunction = True
+            self.isFunction = True            
         else:
             self.addr       = addr
             self.endEA      = addr + 4 
@@ -243,10 +251,21 @@ class Thing:
 
         return self.xrefs
 
+    #########################################################################    
+    def getPrefix(self):
+        if      self.isFunction:
+            return "z_"
+        elif    self.isData:
+            return "zd_"
+        elif    self.isCode:
+            return "zc_"
+        else:
+            return "zo_"
+
 
     #########################################################################
     def isNamed(self):
-        return self.name and not UNNAMED_RE.match(self.name)
+        return self.name and not UNNAMED_REGEX.match(self.name)
 
     #########################################################################
     def suffix(self):
@@ -278,7 +297,7 @@ def resetExistingNames():
         # We don't want to include functions since we'll do that in the next block
         for head in Heads( segment, SegEnd(segment) ):
             name = Name(head)
-            if name and name.startswith("z_"):
+            if name and AUTONAMED_REGEX.match(name):
                 print(name)
                 MakeName( head, "" )
     print("Done resetting names...")
@@ -302,7 +321,7 @@ def renameData():
                 if len(xrefs_from) == 1:
                     reffedThing = xrefs_from.pop()
                     if( reffedThing.isNamed() ):
-                        newName = "z_" + stripExistingPrefix(reffedThing.name)
+                        newName = thing.getPrefix() + stripExistingPrefix(reffedThing.name)
                         #print( "%s -> %s" % ( thing, newName) )                        
                         safeName( thing.addr, newName  )
                         changes += 1
@@ -323,7 +342,7 @@ def renameFunctions():
             if len(xrefs_from) == 1:
                 calledThing = xrefs_from.pop()
                 if( calledThing.isNamed() ):
-                    newName = "z_" + stripExistingPrefix(calledThing.name)
+                    newName = func.getPrefix() + stripExistingPrefix(calledThing.name)
                     #print( "%s -> %s" % ( func, newName) )
                     changes += 1
                     safeName(func.addr, newName )
@@ -371,7 +390,7 @@ def processStringXrefs(item, functionsHash):
             funcAddr = func.startEA
             functionName = Name(funcAddr)
 
-            if( functionName.startswith( 'sub_' ) or functionName.startswith('z_') ):
+            if( functionName.startswith( 'sub_' ) or AUTONAMED_REGEX.match(functionName) ):
                 link = (funcAddr, refAddr, string )
                 links.append(link)
 
@@ -414,7 +433,7 @@ def renameFunctionsBasedOnStrings():
         string  = link[2]
         oldThing = Thing(funcAddr)
         if( not oldThing.isNamed() ):
-            newName = 'z_%s' % sanitizeString(string)
+            newName = oldThing.getPrefix() +  sanitizeString(string)
             safeName( funcAddr , newName ) 
 
 
@@ -480,7 +499,7 @@ def runCallsModel():
             for destID in edges:
                 destThing = Thing(destID)
                 if destThing.isNamed():
-                    newName = "z_%s" % stripExistingPrefix( destThing.name )
+                    newName = sourceThing.getPrefix() +  stripExistingPrefix( destThing.name )
                     msg = ": " + source.probabilityToString(destID)
                     safeName( sourceThing.addr, newName, msg )
                     edge = source.edges[destID]
@@ -537,7 +556,7 @@ def runStringsModel( filterEnabled ):
                 continue
             string = sanitizeString(string)
             if  len(string)>4:
-                newName = "z_%s" % string
+                newName = sourceThing.getPrefix() +  string
                 #msg = ": probability = %0.3f" % source.probability(destID)
                 msg = ": %s" % ( source.probabilityToString(destID) )
                 safeName( sourceThing.addr, newName, msg )
@@ -550,7 +569,11 @@ def runStringsModel( filterEnabled ):
 # main()
 ##############################################################################
 def main():
-    resetExistingNames()
+    resetOld = AskYN( 0, "Reset any existing names generated from previous runs of this script?")
+    if resetOld == -1:
+        return
+    if resetOld==1:
+        resetExistingNames()
     fixupIdaStringNames()
     runStringsModel(True)
     runStringsModel(False)
