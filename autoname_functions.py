@@ -19,7 +19,7 @@ PROBABILITY_CUTTOFF         = 0.50
 STRING_PROBABILITY_CUTTOFF  = 0.10
 
 UNNAMED_REGEX          = re.compile( r"^(sub|loc|flt|off|unk|byte|word|dword)_" )
-AUTONAMED_REGEX        = re.compile( r"^z[cdow]?_" )
+AUTONAMED_REGEX        = re.compile( r"^z[cdo]?_" )
 
 
 ##############################################################################
