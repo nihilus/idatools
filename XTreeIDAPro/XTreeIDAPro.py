@@ -24,6 +24,14 @@ functionAddresses = {}
 
 BLACKLIST = ['alloc', 'zzz_']
 
+
+def demangledName(addr):
+    name = Name(addr)
+    testName = Demangle( name, INF_LONG_DN)
+    if testName:
+        name = testName
+    return name
+
 ######################################################################
 ######################################################################
 class XTree(dict):
@@ -85,7 +93,7 @@ def dumpXrefsFrom( pc, callStack, functionCallCounts, parentTree ):
 
 	func = get_func(func.startEA)
 	dumpShit(func)
-	functionName = Name(func.startEA)
+	functionName = demangledName(func.startEA)
 
 	for blackList in BLACKLIST:
 		if( blackList in functionName ):
@@ -135,7 +143,7 @@ def generateCallsJSONTree( pc, callStack, functionCallCounts ):
 
 	func = get_func(func.startEA)
 	dumpShit(func)
-	functionName = Name(func.startEA)
+	functionName = demangledName(func.startEA)
 	if( functionName[0] == '_' ):
 		return
 	for blackList in BLACKLIST:
@@ -184,7 +192,7 @@ def dumpXrefsTo( pc, callStack, functionCallCounts ):
 
 	func = get_func(func.startEA)
 	dumpShit(func)
-	functionName = Name(func.startEA)
+	functionName = demangledName(func.startEA)
 	if( functionName[0] == '_' ):
 		return
 	for blackList in BLACKLIST:
@@ -249,7 +257,7 @@ def main():
 	Message( "=" * 80 + "\n" )
 	Message("Cross References From\n")
 	Message( "=" * 80 + "\n" )
-	name = Name(functionEA)
+	name = demangledName(functionEA)
 	tree = XTree(name, functionEA)
 	dumpXrefsFrom(functionEA, [], {}, tree )
 
