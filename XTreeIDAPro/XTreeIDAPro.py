@@ -62,7 +62,7 @@ class XTreeServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
 # dumpShit()
 ######################################################################
 def dumpShit(obj, name=""):
-	return
+	return	
 	Message( "%s: %s\n" % (name, obj )) 
 	for attr in dir(obj):
 		val = None
@@ -80,14 +80,13 @@ def dumpXrefsFrom( pc, callStack, functionCallCounts, parentTree ):
 	func = get_func(pc)
 
 	if func is None:
-		# print( "0x%08x is not at a function\n" % pc )
+		print( "0x%08x is not at a function\n" % pc )
 		return
 
 	func = get_func(func.startEA)
 	dumpShit(func)
 	functionName = Name(func.startEA)
-	if( functionName[0] == '_' ):
-		return
+
 	for blackList in BLACKLIST:
 		if( blackList in functionName ):
 			return
